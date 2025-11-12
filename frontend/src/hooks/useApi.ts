@@ -83,5 +83,28 @@ export const useApi = () => {
     }
   };
 
-  return { uploadDbFile, getTableData, runQuery, generateSql };
+  const getTableInsights = async (sessionId: string, tableName: string) => {
+    try {
+      const response = await apiClient.get('/api/table-insights', {
+        params: {
+          session_id: sessionId,
+          table_name: tableName,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw new Error(error.response.data.detail || "Failed to fetch insights");
+      }
+      throw new Error("Failed to fetch insights");
+    }
+  };
+
+  return { 
+    uploadDbFile, 
+    getTableData, 
+    runQuery, 
+    generateSql, 
+    getTableInsights 
+  };
 };

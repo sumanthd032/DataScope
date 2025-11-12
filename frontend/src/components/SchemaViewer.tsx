@@ -4,7 +4,7 @@ import { useApi } from '../hooks/useApi';
 
 export const SchemaViewer: React.FC = () => {
   // [+] Get full state and api access
-  const { schema, sessionId, setLoading, setViewData, setError } = useDbState();
+  const { schema, sessionId, setLoading, setViewData, setError, setSelectedTable } = useDbState();
   const { getTableData } = useApi();
 
   if (!schema) {
@@ -21,9 +21,9 @@ export const SchemaViewer: React.FC = () => {
     setError(null);
     
     try {
-      // Fetch the first page
       const data = await getTableData(sessionId, tableName, 1);
       setViewData(data);
+      setSelectedTable(tableName); // [+] Set the selected table
     } catch (err: any) {
       setError(err.message);
     }

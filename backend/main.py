@@ -8,6 +8,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List
+import numpy as np
+import json
 
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -49,6 +51,18 @@ UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 db_sessions = {}
+
+def clean_value(val):
+    """Helper to convert numpy types to standard Python types for JSON."""
+    if pd.isna(val) or np.isnan(val):
+        return None
+    if isinstance(val, (np.int64, np.int32, np.int16)):
+        return int(val)
+    if isinstance(val, (np.float64, np.float32)):
+        return float(val)
+    if isinstance(val, (np.bool_)):
+        return bool(val)
+    return val
 
 def parse_schema(db_path: str):
     try:
@@ -188,45 +202,76 @@ async def get_table_data(
 
 @app.post("/api/run-query")
 async def run_query(request: QueryRequest):
+    """
+    Executes a user-provided SQL query.
+    Handles data-returning queries (SELECT) and
+    action queries (INSERT, UPDATE, DELETE) differently.
+    """
     session_id = request.session_id
     query = request.query.strip()
-    
-    if not query.lower().startswith("select"):
-        raise HTTPException(status_code=400, detail="Query Error: Only SELECT statements are allowed.")
+    query_lower = query.lower()
     
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
     db_path = db_sessions[session_id]
     
+    conn = None # Initialize connection variable
     try:
         conn = sqlite3.connect(db_path)
         
-        df = pd.read_sql_query(query, conn)
-        df = df.where(pd.notnull(df), None)
-        
-        columns = df.columns.tolist()
-        data = df.to_dict('records')
-        total_rows = len(data)
-        
-        conn.close()
-        
-        return {
-            "table_name": "Query Result",
-            "columns": columns,
-            "data": data,
-            "pagination": {
-                "page": 1,
-                "page_size": total_rows,
-                "total_rows": total_rows,
-                "total_pages": 1
+        # Check if this is a query that returns data
+        if query_lower.startswith("select") or query_lower.startswith("with") or query_lower.startswith("pragma"):
+            
+            df = pd.read_sql_query(query, conn)
+            df = df.where(pd.notnull(df), None)
+            
+            columns = df.columns.tolist()
+            data = df.to_dict('records')
+            total_rows = len(data)
+            
+            return {
+                "table_name": "Query Result",
+                "columns": columns,
+                "data": data,
+                "pagination": {
+                    "page": 1,
+                    "page_size": total_rows,
+                    "total_rows": total_rows,
+                    "total_pages": 1
+                }
             }
-        }
         
+        else:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            conn.commit()
+            
+            rows_affected = cursor.rowcount
+
+            return {
+                "table_name": "Action Result",
+                "columns": ["message"],
+                "data": [{"message": f"Query executed successfully. {rows_affected} rows affected."}],
+                "pagination": {
+                    "page": 1,
+                    "page_size": 1,
+                    "total_rows": 1,
+                    "total_pages": 1
+                }
+            }
+            
     except sqlite3.Error as e:
+        if conn:
+            conn.rollback() 
         raise HTTPException(status_code=400, detail=f"Query Error: {e}")
     except Exception as e:
+        if conn:
+            conn.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    finally:
+        if conn:
+            conn.close() 
 
 @app.post("/api/generate-sql")
 async def generate_sql(request: AIQueryRequest):
@@ -236,7 +281,7 @@ async def generate_sql(request: AIQueryRequest):
     try:
         full_prompt = get_gemini_prompt(request.schema_str, request.prompt)
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(full_prompt)
         
         sql_query = response.text.strip().replace("```sql", "").replace("```", "").strip()
@@ -249,6 +294,89 @@ async def generate_sql(request: AIQueryRequest):
     except Exception as e:
         print(f"Gemini API Error: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred with the AI service: {str(e)}")
+    
+@app.get("/api/table-insights")
+async def get_table_insights(
+    session_id: str = Query(...),
+    table_name: str = Query(...)
+):
+    """
+    Analyzes a table and returns key statistics and insights.
+    """
+    if session_id not in db_sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
+    
+    db_path = db_sessions[session_id]
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        # Load the *entire* table into a pandas DataFrame
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        conn.close()
+        
+        if df.empty:
+            return {
+                "table_name": table_name,
+                "total_rows": 0,
+                "total_cols": 0,
+                "column_stats": []
+            }
+
+        total_rows = int(df.shape[0])
+        total_cols = int(df.shape[1])
+        
+        column_stats = []
+        
+        for col in df.columns:
+            col_type = str(df[col].dtype)
+            
+            # Basic stats
+            missing_count = int(df[col].isnull().sum())
+            missing_percent = (missing_count / total_rows) * 100
+            unique_count = int(df[col].nunique())
+            unique_percent = (unique_count / total_rows) * 100
+            
+            stat = {
+                "name": col,
+                "type": col_type,
+                "missing_count": missing_count,
+                "missing_percent": round(missing_percent, 2),
+                "unique_count": unique_count,
+                "unique_percent": round(unique_percent, 2)
+            }
+            
+            # Numeric stats
+            if pd.api.types.is_numeric_dtype(df[col]):
+                stat["numeric_stats"] = {
+                    "mean": clean_value(df[col].mean()),
+                    "median": clean_value(df[col].median()),
+                    "std_dev": clean_value(df[col].std()),
+                    "min": clean_value(df[col].min()),
+                    "max": clean_value(df[col].max())
+                }
+            
+            # Categorical stats (for strings or low-cardinality numbers)
+            if pd.api.types.is_string_dtype(df[col]) or unique_count < 50:
+                # Get top 10 most frequent items
+                top_values = df[col].value_counts().nlargest(10).to_dict()
+                stat["categorical_stats"] = {
+                    "top_values": {str(k): int(v) for k, v in top_values.items()}
+                }
+                
+            column_stats.append(stat)
+            
+        return {
+            "table_name": table_name,
+            "total_rows": total_rows,
+            "total_cols": total_cols,
+            "column_stats": column_stats
+        }
+
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=400, detail=f"Database error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

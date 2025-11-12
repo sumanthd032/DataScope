@@ -9,7 +9,7 @@ export const QueryRunner: React.FC = () => {
   
   const [query, setQuery] = useState<string>("SELECT * FROM \n-- press Ctrl+Enter (or Cmd+Enter) to run --\n");
   const { runQuery } = useApi();
-  const { sessionId, setLoading, setError, setViewData } = useDbState();
+  const { sessionId, setLoading, setError, setViewData, setSelectedTable } = useDbState();
 
   const handleRunQuery = async () => {
     if (!sessionId || !query) return;
@@ -18,6 +18,7 @@ export const QueryRunner: React.FC = () => {
     try {
       const result = await runQuery(sessionId, query);
       setViewData(result);
+      setSelectedTable(null); 
     } catch (err: any) {
       setError(err.message);
     }

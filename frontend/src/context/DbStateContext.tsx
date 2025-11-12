@@ -29,6 +29,7 @@ interface DbState {
   sessionId: string | null;
   schema: Schema | null;
   currentView: TableData | null;
+  currentSelectedTable: string | null; // [+] Added line
   isLoading: boolean;
   error: string | null;
 }
@@ -38,6 +39,7 @@ interface DbStateContextType extends DbState {
   clearSession: () => void;
   setViewData: (data: TableData) => void;
   clearViewData: () => void;
+  setSelectedTable: (tableName: string | null) => void; // [+] Added line
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
@@ -49,36 +51,44 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
     sessionId: null,
     schema: null,
     currentView: null,
+    currentSelectedTable: null, // [+] Added line
     isLoading: false,
     error: null,
   });
 
   const setSession = (sessionId: string, schema: Schema) => {
-    setState({ 
-      sessionId, 
-      schema, 
-      currentView: null, 
-      isLoading: false, 
-      error: null 
+    setState({
+      sessionId,
+      schema,
+      currentView: null,
+      currentSelectedTable: null, // [+] Added line
+      isLoading: false,
+      error: null,
     });
   };
 
   const clearSession = () => {
-    setState({ 
-      sessionId: null, 
-      schema: null, 
-      currentView: null, 
-      isLoading: false, 
-      error: null 
+    setState({
+      sessionId: null,
+      schema: null,
+      currentView: null,
+      currentSelectedTable: null, // [+] Added line
+      isLoading: false,
+      error: null,
     });
   };
 
   const setViewData = (data: TableData) => {
     setState((prev) => ({ ...prev, currentView: data, isLoading: false, error: null }));
   };
-  
+
   const clearViewData = () => {
     setState((prev) => ({ ...prev, currentView: null }));
+  };
+
+  // [+] New setter for current selected table
+  const setSelectedTable = (tableName: string | null) => {
+    setState((prev) => ({ ...prev, currentSelectedTable: tableName }));
   };
 
   const setLoading = (loading: boolean) => {
@@ -97,6 +107,7 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
         clearSession,
         setViewData,
         clearViewData,
+        setSelectedTable, // [+] Added line
         setLoading,
         setError,
       }}
@@ -113,4 +124,3 @@ export const useDbState = () => {
   }
   return context;
 };
-
