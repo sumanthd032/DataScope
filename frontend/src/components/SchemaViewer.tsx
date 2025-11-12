@@ -1,10 +1,19 @@
 import React from 'react';
 import { useDbState } from '../context/DbStateContext';
-import { useApi } from '../hooks/useApi'; 
+import { useApi } from '../hooks/useApi';
 
 export const SchemaViewer: React.FC = () => {
-  // [+] Get full state and api access
-  const { schema, sessionId, setLoading, setViewData, setError, setSelectedTable } = useDbState();
+  const { 
+    schema, 
+    sessionId, 
+    setLoading, 
+    setViewData, 
+    setError,
+    setSelectedTable,
+    setPlan,
+    setActiveDataViewTab
+  } = useDbState();
+  
   const { getTableData } = useApi();
 
   if (!schema) {
@@ -13,24 +22,24 @@ export const SchemaViewer: React.FC = () => {
 
   const tableNames = Object.keys(schema);
   
-  // [+] --- Click handler ---
   const handleTableClick = async (tableName: string) => {
     if (!sessionId) return;
     
     setLoading(true);
     setError(null);
+    setPlan(null); // Clear old plan
     
     try {
       const data = await getTableData(sessionId, tableName, 1);
       setViewData(data);
-      setSelectedTable(tableName); // [+] Set the selected table
+      setSelectedTable(tableName);
+      setActiveDataViewTab('data'); // Set to data tab
     } catch (err: any) {
       setError(err.message);
     }
   };
 
   return (
-    // [+] Set a max-height and make it scrollable
     <aside className="w-64 p-4 bg-white shadow-md rounded-lg overflow-y-auto max-h-[80vh]">
       <h2 className="text-xl font-bold mb-4 text-gray-800">Schema</h2>
       {tableNames.length === 0 ? (
@@ -40,7 +49,6 @@ export const SchemaViewer: React.FC = () => {
           <ul>
             {tableNames.map((tableName) => (
               <li key={tableName} className="mb-4">
-                {/* [+] --- Make table name clickable --- */}
                 <h3 
                   className="text-lg font-semibold text-blue-700 cursor-pointer hover:underline"
                   onClick={() => handleTableClick(tableName)}
@@ -48,7 +56,6 @@ export const SchemaViewer: React.FC = () => {
                   {tableName}
                 </h3>
                 <ul className="ml-2 mt-1 border-l border-gray-300 pl-2">
-                  {/* ... (column display is the same) ... */}
                   {schema[tableName].map((col) => (
                     <li
                       key={col.name}

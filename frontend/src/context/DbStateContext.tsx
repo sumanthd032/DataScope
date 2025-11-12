@@ -25,11 +25,24 @@ export interface TableData {
   pagination: PaginationInfo;
 }
 
+// [+] Define the plan step interface
+export interface QueryPlanStep {
+  id: number;
+  parent: number;
+  notused: number;
+  detail: string;
+}
+
+// [+] Define possible tabs for the data view
+export type DataViewTab = 'data' | 'insights' | 'explain';
+
 interface DbState {
   sessionId: string | null;
   schema: Schema | null;
   currentView: TableData | null;
-  currentSelectedTable: string | null; // [+] Added line
+  currentSelectedTable: string | null;
+  activeDataViewTab: DataViewTab;      // [+] Added
+  currentPlan: QueryPlanStep[] | null; // [+] Added
   isLoading: boolean;
   error: string | null;
 }
@@ -39,7 +52,9 @@ interface DbStateContextType extends DbState {
   clearSession: () => void;
   setViewData: (data: TableData) => void;
   clearViewData: () => void;
-  setSelectedTable: (tableName: string | null) => void; // [+] Added line
+  setSelectedTable: (tableName: string | null) => void;
+  setPlan: (plan: QueryPlanStep[] | null) => void;          // [+] Added
+  setActiveDataViewTab: (tab: DataViewTab) => void;         // [+] Added
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
@@ -51,7 +66,9 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
     sessionId: null,
     schema: null,
     currentView: null,
-    currentSelectedTable: null, // [+] Added line
+    currentSelectedTable: null,
+    activeDataViewTab: 'data',  // [+] Added
+    currentPlan: null,          // [+] Added
     isLoading: false,
     error: null,
   });
@@ -61,7 +78,9 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
       sessionId,
       schema,
       currentView: null,
-      currentSelectedTable: null, // [+] Added line
+      currentSelectedTable: null,
+      activeDataViewTab: 'data', // [+] Added
+      currentPlan: null,         // [+] Added
       isLoading: false,
       error: null,
     });
@@ -72,7 +91,9 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
       sessionId: null,
       schema: null,
       currentView: null,
-      currentSelectedTable: null, // [+] Added line
+      currentSelectedTable: null,
+      activeDataViewTab: 'data', // [+] Added
+      currentPlan: null,         // [+] Added
       isLoading: false,
       error: null,
     });
@@ -86,9 +107,18 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
     setState((prev) => ({ ...prev, currentView: null }));
   };
 
-  // [+] New setter for current selected table
   const setSelectedTable = (tableName: string | null) => {
     setState((prev) => ({ ...prev, currentSelectedTable: tableName }));
+  };
+
+  // [+] New setter for query plan
+  const setPlan = (plan: QueryPlanStep[] | null) => {
+    setState((prev) => ({ ...prev, currentPlan: plan }));
+  };
+
+  // [+] New setter for active tab
+  const setActiveDataViewTab = (tab: DataViewTab) => {
+    setState((prev) => ({ ...prev, activeDataViewTab: tab }));
   };
 
   const setLoading = (loading: boolean) => {
@@ -107,7 +137,9 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
         clearSession,
         setViewData,
         clearViewData,
-        setSelectedTable, // [+] Added line
+        setSelectedTable,
+        setPlan,              // [+] Added
+        setActiveDataViewTab, // [+] Added
         setLoading,
         setError,
       }}

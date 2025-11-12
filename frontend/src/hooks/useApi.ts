@@ -117,12 +117,28 @@ export const useApi = () => {
     }
   }, []);
 
+  const explainQuery = useCallback(async (sessionId: string, query: string) => {
+    try {
+      const response = await apiClient.post('/api/explain-query', {
+        session_id: sessionId,
+        query: query,
+      });
+      return response.data; 
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw new Error(error.response.data.detail || "Failed to explain query");
+      }
+      throw new Error("Failed to explain query");
+    }
+  }, []);
+
   return { 
     uploadDbFile, 
     getTableData, 
     runQuery, 
     generateSql, 
     getTableInsights,
-    getSchemaDiagram
+    getSchemaDiagram,
+    explainQuery
   };
 };

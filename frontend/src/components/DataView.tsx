@@ -1,19 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useDbState } from '../context/DbStateContext';
 import { TableViewer } from './TableViewer';
 import { InsightsDashboard } from './InsightsDashboard';
+import { QueryPlanView } from './QueryPlanView';
 
 export const DataView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'data' | 'insights'>('data');
-  const { currentSelectedTable, currentView } = useDbState();
+  const { 
+    activeDataViewTab, 
+    setActiveDataViewTab, 
+    currentSelectedTable, 
+    currentView 
+  } = useDbState();
 
-  // Disable insights if it's a query result
   const isInsightsDisabled = currentSelectedTable === null;
-  const tableName = currentSelectedTable ?? currentView?.table_name ?? 'Data';
+  // Use 'Query Result' if a query was run, otherwise the table name
+  const viewName = currentSelectedTable ?? currentView?.table_name ?? 'Data';
 
   // If tab is insights but it becomes disabled, switch back to data
-  if (isInsightsDisabled && activeTab === 'insights') {
-    setActiveTab('data');
+  if (isInsightsDisabled && activeDataViewTab === 'insights') {
+    setActiveDataViewTab('data');
   }
 
   return (
@@ -22,29 +27,36 @@ export const DataView: React.FC = () => {
       <div className="flex border-b border-gray-200 mb-4">
         <TabButton
           title="Data"
-          isActive={activeTab === 'data'}
-          onClick={() => setActiveTab('data')}
+          isActive={activeDataViewTab === 'data'}
+          onClick={() => setActiveDataViewTab('data')}
         />
         <TabButton
           title="Insights"
-          isActive={activeTab === 'insights'}
-          onClick={() => setActiveTab('insights')}
+          isActive={activeDataViewTab === 'insights'}
+          onClick={() => setActiveDataViewTab('insights')}
           disabled={isInsightsDisabled}
         />
+        <TabButton
+          title="Explain Plan"
+          isActive={activeDataViewTab === 'explain'}
+          onClick={() => setActiveDataViewTab('explain')}
+        />
         <span className="flex-1 text-right text-gray-500 p-2 text-sm italic">
-          Viewing: {tableName}
+          Viewing: {viewName}
         </span>
       </div>
 
       {/* --- Tab Content --- */}
       <div className="flex-1">
-        {activeTab === 'data' && <TableViewer />}
-        {activeTab === 'insights' && <InsightsDashboard />}
+        {activeDataViewTab === 'data' && <TableViewer />}
+        {activeDataViewTab === 'insights' && <InsightsDashboard />}
+        {activeDataViewTab === 'explain' && <QueryPlanView />}
       </div>
     </div>
   );
 };
 
+// --- Helper Tab Component ---
 const TabButton: React.FC<{
   title: string;
   isActive: boolean;

@@ -447,6 +447,44 @@ async def get_schema_diagram(session_id: str = Query(...)):
         raise HTTPException(status_code=400, detail=f"Database error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    
+@app.post("/api/explain-query")
+async def explain_query(request: QueryRequest):
+    """
+    Runs an 'EXPLAIN QUERY PLAN' on a user's query
+    and returns the plan steps.
+    """
+    session_id = request.session_id
+    query = request.query.strip()
+    
+    if session_id not in db_sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
+    
+    db_path = db_sessions[session_id]
+    
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # [+] Prepend EXPLAIN QUERY PLAN
+        cursor.execute(f"EXPLAIN QUERY PLAN {query}")
+        
+        results = cursor.fetchall()
+        
+        # Convert list of Row objects to a list of plain dicts
+        plan_steps = [dict(row) for row in results]
+        
+        return {"plan": plan_steps}
+            
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=400, detail=f"Query Error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":
