@@ -1,11 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react'; 
 import { useDropzone } from 'react-dropzone';
 import { useApi } from '../hooks/useApi';
+import { useDbState } from '../context/DbStateContext'; 
 
 export const FileUpload: React.FC = () => {
-  const [message, setMessage] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const { setSession, setLoading, setError, isLoading, error } = useDbState();
   const { uploadDbFile } = useApi();
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -13,54 +12,53 @@ export const FileUpload: React.FC = () => {
     if (!file) return;
 
     if (!file.name.endsWith('.sqlite') && !file.name.endsWith('.db')) {
-        setError('Invalid file type. Please upload a .sqlite or .db file.');
-        setMessage('');
-        return;
+      setError('Invalid file type. Please upload a .sqlite or .db file.');
+      return;
     }
     
-    setIsLoading(true);
-    setError('');
-    setMessage('');
+    setLoading(true);
+    setError(null);
 
     try {
       const result = await uploadDbFile(file);
-      setMessage(result.message || 'File uploaded successfully!');
+      
+      setSession(result.session_id, result.schema);
+      
+      
     } catch (err: any) {
       setError(err.message || 'An unknown error occurred.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [uploadDbFile]);
+  }, [uploadDbFile, setSession, setLoading, setError]); 
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-  onDrop,
-  accept: {
-    'application/vnd.sqlite3': ['.sqlite', '.db'],
-    'application/x-sqlite3': ['.sqlite', '.db'],
-    'application/octet-stream': ['.sqlite', '.db'], // A fallback
-  },
-  maxFiles: 1,
-});
+    onDrop,
+    accept: {
+      'application/vnd.sqlite3': ['.sqlite', '.db'],
+      'application/x-sqlite3': ['.sqlite', '.db'],
+      'application/octet-stream': ['.sqlite', '.db'],
+    },
+    maxFiles: 1,
+  });
 
   return (
     <div className="w-full max-w-lg p-8 mx-auto border-2 border-dashed rounded-lg border-gray-400 text-center cursor-pointer hover:border-blue-500 transition-colors">
       <div {...getRootProps()}>
         <input {...getInputProps()} />
+        {/* ... (UI is the same) ... */}
         {isDragActive ? (
-          <p className="text-blue-600">Drop the .sqlite file here ...</p>
+          <p className="text-blue-600">Drop the file here ...</p>
         ) : (
           <p className="text-gray-600">
-            Drag 'n' drop a .sqlite file here, or click to select
+            Drag 'n' drop a .sqlite or .db file, or click to select
           </p>
         )}
       </div>
       
-      {isLoading && <p className="mt-4 text-blue-500">Uploading...</p>}
+      {isLoading && <p className="mt-4 text-blue-500">Processing...</p>}
       
-      {message && (
-        <p className="mt-4 text-green-600 font-semibold">{message}</p>
-      )}
-      
+      {/* [+] Use global error state */}
       {error && (
         <p className="mt-4 text-red-600 font-semibold">{error}</p>
       )}
