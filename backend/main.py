@@ -37,8 +37,9 @@ async def upload_database_file(file: UploadFile = File(...)):
     It saves the file temporarily to the server.
     """
 
-    if not file.filename.endswith(".sqlite"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .sqlite file.")
+    file_extension = os.path.splitext(file.filename)[1]
+    if file_extension not in [".sqlite", ".db"]:
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .sqlite or .db file.")
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
 
