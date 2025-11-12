@@ -7,6 +7,7 @@ import pandas as pd
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import re
 from typing import Dict, List
 import numpy as np
 import json
@@ -371,6 +372,76 @@ async def get_table_insights(
             "total_cols": total_cols,
             "column_stats": column_stats
         }
+
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=400, detail=f"Database error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    
+@app.get("/api/schema-diagram")
+async def get_schema_diagram(session_id: str = Query(...)):
+    """
+    Parses the full schema and all foreign key relationships
+    and returns a string for a Mermaid.js ER Diagram.
+    """
+    if session_id not in db_sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
+    
+    db_path = db_sessions[session_id]
+    
+    try:
+        # --- 1. Get the full schema (tables and columns) ---
+        # We reuse the function we already built!
+        schema = parse_schema(db_path)
+        
+        conn = sqlite3.connect(db_path)
+        # [+] Use sqlite3.Row to access columns by name
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        all_relations = []
+        
+        # --- 2. Get all foreign key relationships ---
+        for table_name in schema.keys():
+            cursor.execute(f"PRAGMA foreign_key_list({table_name});")
+            foreign_keys = cursor.fetchall()
+            
+            for fk in foreign_keys:
+                # fk['table'] = other table, fk['from'] = this col, fk['to'] = other col
+                relation = {
+                    "from_table": table_name,
+                    "from_col": fk["from"],
+                    "to_table": fk["table"],
+                    "to_col": fk["to"]
+                }
+                all_relations.append(relation)
+                
+        conn.close()
+
+        # --- 3. Build the Mermaid.js string ---
+        mermaid_string = "erDiagram\n"
+        
+        # Add table definitions
+        for table_name, columns in schema.items():
+            mermaid_string += f"    {table_name} {{\n"
+            for col in columns:
+                # Clean type (e.g., "VARCHAR(255)" -> "VARCHAR")
+                col_type = re.sub(r'\(.*\)', '', col['type'])
+                
+                # Build the line, adding markers for PK (Primary Key)
+                mermaid_string += f"        {col_type} {col['name']}"
+                if col['pk']:
+                    mermaid_string += " PK"
+                # We could add FK, but Mermaid infers this
+                mermaid_string += "\n"
+            mermaid_string += "    }\n\n"
+        
+        # Add relationship definitions
+        for rel in all_relations:
+            # Format: TABLE_A ||--o{ TABLE_B : "label"
+            mermaid_string += f"    {rel['from_table']} ||--o{{ {rel['to_table']} : \"{rel['from_col']} to {rel['to_col']}\"\n"
+            
+        return {"diagram_string": mermaid_string}
 
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=f"Database error: {e}")
