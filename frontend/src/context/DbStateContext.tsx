@@ -1,4 +1,16 @@
 import React, { createContext, useState, useContext, type ReactNode } from 'react';
+
+export interface Column {
+  name: string;
+  type: string;
+  notnull: boolean;
+  pk: boolean;
+}
+
+export interface Schema {
+  [tableName: string]: Column[];
+}
+
 export interface PaginationInfo {
   page: number;
   page_size: number;
@@ -36,7 +48,7 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [state, setState] = useState<DbState>({
     sessionId: null,
     schema: null,
-    currentView: null, 
+    currentView: null,
     isLoading: false,
     error: null,
   });
@@ -83,8 +95,8 @@ export const DbStateProvider: React.FC<{ children: ReactNode }> = ({ children })
         ...state,
         setSession,
         clearSession,
-        setViewData,    
-        clearViewData,   
+        setViewData,
+        clearViewData,
         setLoading,
         setError,
       }}

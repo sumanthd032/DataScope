@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDbState } from '../context/DbStateContext';
-import { useApi } from '../hooks/useApi'; // [+] Import useApi
+import { useApi } from '../hooks/useApi'; 
 
 export const SchemaViewer: React.FC = () => {
   // [+] Get full state and api access

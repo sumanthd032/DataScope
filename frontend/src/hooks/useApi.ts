@@ -1,16 +1,25 @@
-
 import axios from 'axios';
+
+const API_BASE_URL = 'http://127.0.0.1:8000';
+
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+});
 
 export const useApi = () => {
   const uploadDbFile = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
+
     try {
       const response = await apiClient.post('/api/upload-db', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
       return response.data;
     } catch (error) {
+      console.error("Error uploading file:", error);
       if (axios.isAxiosError(error) && error.response) {
         throw new Error(error.response.data.detail || "File upload failed");
       }
@@ -42,4 +51,22 @@ export const useApi = () => {
     }
   };
 
-  return { uploadDbFile, getTableData }; 
+  const runQuery = async (sessionId: string, query: string) => {
+    try {
+      // Use POST and send a JSON body
+      const response = await apiClient.post('/api/run-query', {
+        session_id: sessionId,
+        query: query,
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        // This will now correctly show "Query Error: ..."
+        throw new Error(error.response.data.detail || "Failed to run query");
+      }
+      throw new Error("Failed to run query");
+    }
+  };
+
+  return { uploadDbFile, getTableData, runQuery };
+};

@@ -4,8 +4,29 @@ import os
 import sqlite3
 import uuid
 import pandas as pd  
+from pydantic import BaseModel
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query 
 from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+origins = [
+    "http://localhost:5173", 
+    "http://localhost:3000", 
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"], 
+)
+
+class QueryRequest(BaseModel):
+    session_id: str
+    query: str
+
 
 UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -118,6 +139,60 @@ async def get_table_data(
         
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=f"Database error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    
+@app.post("/api/run-query")
+async def run_query(request: QueryRequest):
+    """
+    Executes a user-provided SQL query (SELECT only).
+    """
+    session_id = request.session_id
+    query = request.query.strip()
+    
+    # --- Basic Security: Allow SELECT only ---
+    if not query.lower().startswith("select"):
+        raise HTTPException(status_code=400, detail="Query Error: Only SELECT statements are allowed.")
+    
+    # --- Check session ---
+    if session_id not in db_sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
+    
+    db_path = db_sessions[session_id]
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        
+        # --- Execute Query using Pandas ---
+        # This is safer and handles complex types well
+        df = pd.read_sql_query(query, conn)
+        
+        # Convert NaN to None (null)
+        df = df.where(pd.notnull(df), None)
+        
+        columns = df.columns.tolist()
+        data = df.to_dict('records')
+        total_rows = len(data)
+        
+        conn.close()
+        
+        # --- Return data in the SAME format as get_table_data ---
+        # This lets our TableViewer component render it perfectly.
+        return {
+            "table_name": "Query Result", # A generic name
+            "columns": columns,
+            "data": data,
+            "pagination": {
+                "page": 1,
+                "page_size": total_rows,
+                "total_rows": total_rows,
+                "total_pages": 1
+            }
+        }
+        
+    except sqlite3.Error as e:
+        # Catch database-specific errors (e.g., syntax error)
+        raise HTTPException(status_code=400, detail=f"Query Error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 

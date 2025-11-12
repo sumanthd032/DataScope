@@ -1,5 +1,5 @@
 import React from 'react';
-import { useDbState, PaginationInfo } from '../context/DbStateContext';
+import { useDbState, type PaginationInfo } from '../context/DbStateContext';
 import { useApi } from '../hooks/useApi';
 
 // [+] --- New Component: PaginationControls ---
