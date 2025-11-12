@@ -3,33 +3,51 @@ import shutil
 import os
 import sqlite3
 import uuid
-import pandas as pd  
-from pydantic import BaseModel
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query 
+import pandas as pd
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Dict, List
+
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not API_KEY:
+    print("Warning: GOOGLE_API_KEY not found in .env file. AI features will be disabled.")
+    genai_configured = False
+else:
+    genai.configure(api_key=API_KEY)
+    genai_configured = True
 
 app = FastAPI()
 
 origins = [
-    "http://localhost:5173", 
-    "http://localhost:3000", 
+    "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class QueryRequest(BaseModel):
     session_id: str
     query: str
 
+class AIQueryRequest(BaseModel):
+    prompt: str
+    schema_str: str
 
 UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 db_sessions = {}
 
 def parse_schema(db_path: str):
@@ -45,16 +63,47 @@ def parse_schema(db_path: str):
         for (table_name,) in tables:
             if table_name.startswith("sqlite_"):
                 continue
+                
             cursor.execute(f"PRAGMA table_info({table_name});")
             columns = cursor.fetchall()
+            
             schema[table_name] = [
-                {"name": col[1], "type": col[2], "notnull": bool(col[3]), "pk": bool(col[5])}
+                {
+                    "name": col[1],
+                    "type": col[2],
+                    "notnull": bool(col[3]),
+                    "pk": bool(col[5]),
+                }
                 for col in columns
             ]
+            
         conn.close()
         return schema
+        
     except sqlite3.Error as e:
+        print(f"Database error: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to parse database file: {e}")
+
+def get_gemini_prompt(schema_str: str, user_prompt: str) -> str:
+    return f"""
+You are an expert SQLite database engineer. Your task is to write a single, valid SQLite query based on a user's request and a given database schema.
+
+**Database Schema:**
+```sql
+{schema_str}
+```
+
+**User Request:**
+"{user_prompt}"
+
+**Instructions:**
+1.  Only output a single, valid SQLite query.
+2.  Do NOT include any explanations, comments, or markdown formatting (like ```sql).
+3.  Analyze the user's request and the schema to formulate the correct query.
+4.  If the request is ambiguous or cannot be answered by the schema, you should still attempt to write the most logical query.
+
+**Query:**
+"""
 
 @app.get("/api/ping")
 def read_root():
@@ -96,9 +145,6 @@ async def get_table_data(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):
-    """
-    Fetches paginated data from a specific table.
-    """
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
@@ -116,11 +162,9 @@ async def get_table_data(
         query = f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}"
         
         df = pd.read_sql_query(query, conn)
-        
         df = df.where(pd.notnull(df), None)
         
         columns = df.columns.tolist()
-        
         data = df.to_dict('records')
         
         conn.close()
@@ -141,20 +185,15 @@ async def get_table_data(
         raise HTTPException(status_code=400, detail=f"Database error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-    
+
 @app.post("/api/run-query")
 async def run_query(request: QueryRequest):
-    """
-    Executes a user-provided SQL query (SELECT only).
-    """
     session_id = request.session_id
     query = request.query.strip()
     
-    # --- Basic Security: Allow SELECT only ---
     if not query.lower().startswith("select"):
         raise HTTPException(status_code=400, detail="Query Error: Only SELECT statements are allowed.")
     
-    # --- Check session ---
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
@@ -163,11 +202,7 @@ async def run_query(request: QueryRequest):
     try:
         conn = sqlite3.connect(db_path)
         
-        # --- Execute Query using Pandas ---
-        # This is safer and handles complex types well
         df = pd.read_sql_query(query, conn)
-        
-        # Convert NaN to None (null)
         df = df.where(pd.notnull(df), None)
         
         columns = df.columns.tolist()
@@ -176,10 +211,8 @@ async def run_query(request: QueryRequest):
         
         conn.close()
         
-        # --- Return data in the SAME format as get_table_data ---
-        # This lets our TableViewer component render it perfectly.
         return {
-            "table_name": "Query Result", # A generic name
+            "table_name": "Query Result",
             "columns": columns,
             "data": data,
             "pagination": {
@@ -191,10 +224,31 @@ async def run_query(request: QueryRequest):
         }
         
     except sqlite3.Error as e:
-        # Catch database-specific errors (e.g., syntax error)
         raise HTTPException(status_code=400, detail=f"Query Error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+@app.post("/api/generate-sql")
+async def generate_sql(request: AIQueryRequest):
+    if not genai_configured:
+        raise HTTPException(status_code=503, detail="AI service is not configured. Missing GOOGLE_API_KEY.")
+
+    try:
+        full_prompt = get_gemini_prompt(request.schema_str, request.prompt)
+        
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(full_prompt)
+        
+        sql_query = response.text.strip().replace("```sql", "").replace("```", "").strip()
+        
+        return {
+            "sql_query": sql_query,
+            "prompt": request.prompt
+        }
+        
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred with the AI service: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

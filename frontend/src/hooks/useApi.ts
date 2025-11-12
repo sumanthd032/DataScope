@@ -68,5 +68,20 @@ export const useApi = () => {
     }
   };
 
-  return { uploadDbFile, getTableData, runQuery };
+  const generateSql = async (prompt: string, schema_str: string) => {
+    try {
+      const response = await apiClient.post('/api/generate-sql', {
+        prompt,
+        schema_str,
+      });
+      return response.data; // { sql_query: "..." }
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw new Error(error.response.data.detail || "AI query failed");
+      }
+      throw new Error("AI query failed");
+    }
+  };
+
+  return { uploadDbFile, getTableData, runQuery, generateSql };
 };
