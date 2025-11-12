@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv
+venv/
+pip-freeze.txt
+
+# Node
+node_modules/
+dist/
+.npm
+npm-debug.log*
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
