@@ -5,6 +5,7 @@ import sqlite3
 import uuid
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import re
@@ -139,7 +140,10 @@ async def upload_database_file(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         schema = parse_schema(file_path)
-        db_sessions[session_id] = file_path
+        db_sessions[session_id] = {
+            "path": file_path,
+            "original_name": file.filename
+        }
         
         return {
             "message": f"File '{file.filename}' processed successfully.",
@@ -163,7 +167,7 @@ async def get_table_data(
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
-    db_path = db_sessions[session_id]
+    db_path = db_sessions[session_id]["path"]
     
     try:
         conn = sqlite3.connect(db_path)
@@ -215,7 +219,7 @@ async def run_query(request: QueryRequest):
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
-    db_path = db_sessions[session_id]
+    db_path = db_sessions[session_id]["path"]
     
     conn = None # Initialize connection variable
     try:
@@ -307,7 +311,7 @@ async def get_table_insights(
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
-    db_path = db_sessions[session_id]
+    db_path = db_sessions[session_id]["path"]
     
     try:
         conn = sqlite3.connect(db_path)
@@ -387,7 +391,7 @@ async def get_schema_diagram(session_id: str = Query(...)):
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
-    db_path = db_sessions[session_id]
+    db_path = db_sessions[session_id]["path"]
     
     try:
         # --- 1. Get the full schema (tables and columns) ---
@@ -460,7 +464,7 @@ async def explain_query(request: QueryRequest):
     if session_id not in db_sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
     
-    db_path = db_sessions[session_id]
+    db_path = db_sessions[session_id]["path"]
     
     conn = None
     try:
@@ -485,6 +489,27 @@ async def explain_query(request: QueryRequest):
     finally:
         if conn:
             conn.close()
+
+@app.get("/api/download-db")
+async def download_database(session_id: str = Query(...)):
+    """
+    Downloads the modified database file.
+    """
+    if session_id not in db_sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please upload the file again.")
+    
+    session_data = db_sessions[session_id]
+    file_path = session_data["path"]
+    original_name = session_data["original_name"]
+    
+    return FileResponse(
+        path=file_path,
+        # This filename is what the user's browser will save it as
+        filename=original_name,
+        media_type="application/vnd.sqlite3",
+        # This header tells the browser to treat it as an attachment
+        headers={"Content-Disposition": f"attachment; filename=\"{original_name}\""}
+    )
 
 
 if __name__ == "__main__":
