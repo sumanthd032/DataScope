@@ -1,6 +1,8 @@
 import { FileUpload } from './components/FileUpload';
 import { SchemaViewer } from './components/SchemaViewer';
+import { TableViewer } from './components/TableViewer'; 
 import { useDbState } from './context/DbStateContext';
+
 function App() {
   const { sessionId } = useDbState();
 
@@ -15,20 +17,14 @@ function App() {
         </header>
         
         <main>
-          {/*
-            [+] Conditionally render components:
-            If we have no session, show the upload box.
-            If we have a session, show the schema viewer.
-          */}
           {!sessionId ? (
             <FileUpload />
           ) : (
             <div className="flex gap-6">
               <SchemaViewer />
-              {/* This is where our Table Viewer and Query Runner will go */}
-              <div className="flex-1 bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-bold">Main Content Area</h2>
-                <p>Query runner and table view will live here.</p>
+              {/* [+] --- Add TableViewer --- */}
+              <div className="flex-1 bg-white p-6 rounded-lg shadow-md min-h-[80vh] flex flex-col">
+                <TableViewer />
               </div>
             </div>
           )}
